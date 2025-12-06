@@ -3,42 +3,51 @@
 <head>
     <title>Booking Confirmation</title>
     <style>
+        
+
         body {
             font-family: Arial, sans-serif;
             margin: 40px;
-            background-color: #f4f4f4;
+            background-color: #0f3b2e;
         }
 
         .container {
-            width: 500px;
             margin: auto;
-            background: white;
+            background: #466681;
             padding: 25px;
             border-radius: 12px;
             box-shadow: 0 0 12px rgba(0,0,0,0.1);
         }
 
         h2 {
+            font-size: 50px;
             text-align: center;
-            color: green;
+            color: white;
             margin-bottom: 25px;
         }
 
         .section-title {
-            font-size: 18px;
+            font-size: 25px;
             margin-top: 20px;
             margin-bottom: 10px;
             font-weight: bold;
-            color: #333;
+            color: white;
         }
 
         .info {
             margin-bottom: 8px;
             font-size: 16px;
+            color: black;
         }
 
         .label {
-            font-weight: bold;
+            font-weight: 800;
+        }
+
+        .section{
+            background-color: white;
+            padding: 10px;
+            border-radius: 10px;
         }
 
         .divider {
@@ -54,7 +63,7 @@
         button {
             padding: 12px 20px;
             border: none;
-            background-color: #007bff;
+            background-color: #99b0a7;
             color: white;
             font-size: 16px;
             border-radius: 8px;
@@ -62,7 +71,7 @@
         }
 
         button:hover {
-            background-color: #0056b3;
+            background-color: #667c73;
         }
 
     </style>
@@ -75,18 +84,18 @@
 
     <!-- Passenger Info -->
     <div class="section-title">Passenger Information</div>
-
+    <div class="section">
     <p class="info"><span class="label">Passenger ID:</span> {{ passenger.PassengerID }}</p>
     <p class="info"><span class="label">Name:</span> {{ passenger.Name }}</p>
     <p class="info"><span class="label">Passport Number:</span> {{ passenger.PassportNumber }}</p>
     <p class="info"><span class="label">Date of Birth:</span> {{ passenger.DateofBirth }}</p>
     <p class="info"><span class="label">Phone:</span> {{ passenger.Phone }}</p>
-
+    </div>
     <div class="divider"></div>
 
     <!-- Flight Info -->
     <div class="section-title">Flight Information</div>
-
+    <div class="section">
     <p class="info"><span class="label">Flight Number:</span> {{ flight.FlightNumber }}</p>
     <p class="info"><span class="label">From:</span> 
         {{ flight.DepartureAirportName }} ({{ flight.DepartureCity }})
@@ -96,16 +105,15 @@
     </p>
     <p class="info"><span class="label">Departure Time:</span> {{ flight.DepartureTime }}</p>
     <p class="info"><span class="label">Arrival Time:</span> {{ flight.ArrivalTime }}</p>
-
+    </div>
     <div class="divider"></div>
-
     <!-- Booking Info -->
     <div class="section-title">Booking Details</div>
-
+    <div class="section">
     <p class="info"><span class="label">Booking ID:</span> {{ booking.BookingID }}</p>
     <p class="info"><span class="label">Seat Number:</span> {{ booking.SeatNumber }}</p>
     <p class="info"><span class="label">Booking Number:</span> {{ booking.BookingNumber }}</p>
-
+    </div>
     <div class="button-container">
         <form action="/search_flights" method="GET">
             <button type="submit">Return to Search</button>

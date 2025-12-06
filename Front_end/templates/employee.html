@@ -7,10 +7,14 @@
         body {
             font-family: Arial, sans-serif;
             margin: 40px;
+            background-color: #0f3b2e;
         }
 
         .menu-section {
             margin-bottom: 60px; /* adds space between the dropdown sections */
+            background-color: #466681;
+            border-radius: 20px;
+            padding: 15px;
         }
 
         select {
@@ -23,7 +27,7 @@
     
     <!-- Customer Section -->
     <div class="menu-section">
-        <h2>Customer Help</h2>
+        <h2 style="color:white;font-size: 50px;">Customer Help</h2>
         <select id="employeeMenu" onchange="goToPage(this)">
             <option value="">-- Select an option --</option>
             <option value="/add_passenger">Add Passenger</option>

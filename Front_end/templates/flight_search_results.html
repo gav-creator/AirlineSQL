@@ -3,10 +3,19 @@
 <head>
     <title>Flight Search Results</title>
     <style>
+        
+        body{
+            background-color: #0f3b2e;
+        }
+        .container{
+            background-color: #466681;
+            border-radius: 20px;
+        }
         table {
             width: 80%;
             border-collapse: collapse;
             margin: 20px auto;
+            padding: 20px auto;
         }
         th, td {
             border: 1px solid #ccc;
@@ -14,20 +23,66 @@
             text-align: center;
         }
         th {
-            background-color: #f2f2f2;
+            background-color: #99b0a7;
         }
         h2 {
             text-align: center;
+            color: white;
+            font-weight: 700;
+            font-size: 50px;
+        }
+        h3{
+            color:white;
+            font-weight:700;
+            font-size: 30px;
+            margin-bottom: 0px;
+        }
+        .flightresult{
+            background:white;
+            border-radius:20px;
+            margin: 0px 10px; 
+            padding: 10px;
+        }
+        .flightInfo{
+            background-color: white;
+            border-radius: 20px;
+            margin: 10px 10px;
+        }
+        input{
+        width: 90%;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+        box-sizing: border-box;
+        appearance: none;
+        }
+        button{
+            margin-top: 10px;
+            padding: 12px;
+            width: 90%;
+            background: #99b0a7;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover{
+            background-color:#667c73;
+        }
+        label{
+            font-size: 20px;
         }
     </style>
 </head>
 <body>
-
+<div class="container">
 <h2>Available Flights</h2>
 
+<div class="flightresult">
 {% if flights|length == 0 %}
     <p style="text-align:center;">No flights found matching your search.</p>
 {% else %}
+
 
 <table>
   <tr>
@@ -51,9 +106,9 @@
   </tr>
   {% endfor %}
 </table>
-
+</div>
 <h3 style="text-align:center;">Book a Flight</h3>
-
+<div class="flightresult">
 <form action="/book_flight" method="GET" style="text-align:center; margin-top:20px;">
     <label>Enter Flight Number:</label>
 
@@ -67,8 +122,8 @@
 
     <button type="submit">Book Flight</button>
 </form>
-
+</div>
 {% endif %}
-
+</div>
 </body>
 </html>
