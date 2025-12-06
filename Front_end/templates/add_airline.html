@@ -2,15 +2,76 @@
 <html>
 <head>
     <title>Manage Airlines</title>
+    <style>
+        body{
+            background-color: #0f3b2e;
+        }
+        .container{
+            background-color: #466681;
+            border-radius: 20px;
+            padding: 20px;
+            margin: 20px;
+        }
+        .manageAirline, .existingAirline{
+            background-color: white;
+            border-radius: 20px;
+            padding: 10px;
+        }
+        h2,h3{
+            color:white;
+        }
+        h2{
+            font-size: 50px;
+            font-weight: 700;
+        }
+        h3{
+            font-size: 30px;
+            margin: 12px 0px 1px 0px;
+        }
+
+        input, select {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 16px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+        box-sizing: border-box;
+        appearance: none;
+}
+        button {
+            padding: 10px;
+            width: 100%;
+            background: #99b0a7;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover { background: #667c73; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 25px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+        }
+        th {
+            background: #99b0a7;
+        }
+    </style>
 </head>
 <body>
-
+    <div class="container">
     <h2>Manage Airlines</h2>
 
     {% if message %}
-        <p style="color:red;">{{ message }}</p>
+        <p style="color:white; font-weight:bold;">{{ message }}</p>
     {% endif %}
-
+    <div class="manageAirline">
     <form method="POST" action="/add_airline">
 
         <label>Action:</label>
@@ -36,10 +97,10 @@
         <button type="submit">Submit</button>
 
     </form>
+    </div>
+    <h3>Existing Airlines</h3>
 
-    <h2>Existing Airlines</h2>
-
-<div style="height:200px; overflow-y:scroll; border:1px solid #ccc; padding:10px;">
+<div class="existingAirline">
     <table border="1" cellpadding="5">
         <tr>
             <th>ID</th>
@@ -56,6 +117,7 @@
         {% endfor %}
     </table>
     
+</div>
 </div>
 </body>
 </html>

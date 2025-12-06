@@ -6,54 +6,83 @@
         body {
             font-family: Arial, sans-serif;
             margin: 30px;
-            background-color: #f4f4f4;
+            background-color: #0f3b2e;
         }
 
         .container {
             width: 600px;
             margin: auto;
             padding: 25px;
-            background: white;
+            background: #466681;
             border-radius: 12px;
             box-shadow: 0 0 12px rgba(0,0,0,0.1);
         }
-
+        h2, h3{
+            color:white;
+        }
+        h2{
+            font-size: 35px;
+            font-weight: 700px
+        }
+        h3{
+            font-size: 27px;
+        }
+        .modifyEmployee, .employeeInfo{
+            background-color: white;
+            padding: 10px;
+            border-radius: 20px;
+        }
         label { font-weight: bold; }
         input, select {
-            width: 100%;
-            padding: 8px;
-            margin-top: 8px;
-            margin-bottom: 12px;
-        }
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 16px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+        box-sizing: border-box;
+        appearance: none;
+}
 
         button {
             padding: 10px;
             width: 100%;
-            background: #007bff;
+            background: #99b0a7;
             color: white;
             border: none;
             border-radius: 6px;
             cursor: pointer;
             margin-top: 10px;
         }
-        button:hover { background: #0056b3; }
+        button:hover { background: #667c73; }
 
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 25px;
         }
+        .employeeInfo table {
+        width: 100%;
+        table-layout: fixed;
+        border-collapse: collapse;
+        }
         th, td {
             border: 1px solid #ccc;
             padding: 8px;
             text-align: center;
         }
+        .employeeInfo th, .employeeInfo td {
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            hyphens: auto;
+            max-width: 180px;
+            white-space: normal;
+        }
         th {
-            background: #eaeaea;
+            background: #99b0a7;
         }
 
         .message {
-            color: red;
+            color: white;
             font-weight: bold;
             margin-bottom: 15px;
         }
@@ -68,7 +97,7 @@
     {% if message %}
         <p class="message">{{ message }}</p>
     {% endif %}
-
+    <div class="modifyEmployee">
     <form method="POST">
 
         <label>Action:</label>
@@ -96,8 +125,9 @@
 
         <button type="submit">Submit</button>
     </form>
-
+    </div>
     <h3>Existing Employees</h3>
+    <div class="employeeInfo">
     <table>
         <tr>
             <th>ID</th>
@@ -116,6 +146,7 @@
         </tr>
         {% endfor %}
     </table>
+    </div>
 
 </div>
 </body>
