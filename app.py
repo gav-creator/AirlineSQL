@@ -1,17 +1,13 @@
-
 from flask import Flask, render_template, jsonify, request, flash, redirect, url_for
-import mysql.connector
 
 app = Flask(__name__,template_folder="Front_end/templates")
 app.secret_key = "secret_123"
 
-db = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="2EZ24get", #Come back and update password
-    database="Project_DB"
-)
+from dbConnect import get_db_connection
+
+db = get_db_connection()
 cursor = db.cursor(dictionary=True)
+
 @app.route('/')
 def home():
     return render_template('login.html')
@@ -39,7 +35,7 @@ def login():
 
     # Employee found: check designation
     if employee["Designation"].upper() == "ADMIN" or employee["Designation"].upper() == "CEO":
-        return render_template("admin.html")
+        return redirect("/admin")
 
     # Otherwise they are regular employee
     return render_template("employee.html")
@@ -48,6 +44,60 @@ def login():
 @app.route('/employee')
 def employee():
     return render_template('employee.html')
+
+@app.route("/admin")
+def admin_dashboard():
+    cursor = db.cursor(dictionary=True)
+
+    # 1. Airline with most flights
+    cursor.execute("""
+        SELECT a.Name AS AirlineName, COUNT(f.FlightID) AS TotalFlights
+        FROM Airline a
+        LEFT JOIN Flight f ON a.AirlineID = f.AirlineID
+        GROUP BY a.AirlineID
+        ORDER BY TotalFlights DESC
+        LIMIT 1;
+    """)
+    airlineMostFlights = cursor.fetchone()
+
+    # 2. Passengers per flight
+    cursor.execute("""
+        SELECT f.FlightNumber, COUNT(b.PassengerID) AS PassengerCount
+        FROM Flight f
+        LEFT JOIN Booking b ON f.FlightID = b.FlightID
+        GROUP BY f.FlightID;
+    """)
+    passengersPerFlight = cursor.fetchall()
+
+    # 3. Luggage weight per flight
+    cursor.execute("""
+        SELECT f.FlightNumber, SUM(l.Weight) AS TotalLuggageWeight
+        FROM Flight f
+        LEFT JOIN Booking b ON f.FlightID = b.FlightID
+        LEFT JOIN Luggage l ON b.BookingID = l.BookingID
+        GROUP BY f.FlightID;
+    """)
+    luggageWeight = cursor.fetchall()
+
+    # 4. Revenue per flight
+    cursor.execute("""
+        SELECT f.FlightNumber, SUM(p.Amount) AS Revenue
+        FROM Flight f
+        LEFT JOIN Booking b ON f.FlightID = b.FlightID
+        LEFT JOIN Payment p ON b.BookingID = p.BookingID
+        GROUP BY f.FlightID;
+    """)
+    revenuePerFlight = cursor.fetchall()
+
+    return render_template(
+        'admin.html',  # this is your combined HTML template
+        airlineMostFlights=airlineMostFlights,
+        passengersPerFlight=passengersPerFlight,
+        luggageWeight=luggageWeight,
+        revenuePerFlight=revenuePerFlight
+    )
+
+
 
 #Customer button selected
 @app.route("/search_flights", methods=["GET", "POST"])
@@ -341,52 +391,30 @@ def add_airline():
 
 @app.route("/update_crew", methods=["GET", "POST"])
 def update_crew():
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
     message = None
 
-    cursor = db.cursor(dictionary=True)
-
-    # Load flight numbers for dropdown
+    # Load all flights for dropdown
     cursor.execute("SELECT FlightID, FlightNumber FROM Flight ORDER BY FlightNumber")
     flights = cursor.fetchall()
 
     selected_flight_id = None
     crew_list = []
 
-    # If user selects a flight or performs an update
     if request.method == "POST":
         action = request.form.get("action")
         selected_flight_id = request.form.get("flight_id")
 
-        # ---------------- GET CREW LIST FOR SELECTED FLIGHT ----------------
+        # Load crew list if a flight is selected
         if selected_flight_id:
             cursor.execute("""
                 SELECT fc.EmployeeID, e.Name, fc.Role
                 FROM FlightCrew fc
                 JOIN Employee e ON fc.EmployeeID = e.EmployeeID
-                WHERE fc.FlightID = %s
+                WHERE fc.FlightID=%s
             """, (selected_flight_id,))
             crew_list = cursor.fetchall()
-
-        # ---------------- REMOVE CREW MEMBER ----------------
-        if action == "remove":
-            emp_id = request.form.get("remove_employee_id")
-
-            if emp_id:
-                cursor.execute("""
-                    DELETE FROM FlightCrew
-                    WHERE FlightID = %s AND EmployeeID = %s
-                """, (selected_flight_id, emp_id))
-                db.commit()
-                message = "Crew member removed from this flight."
-
-                # Reload updated crew list
-                cursor.execute("""
-                    SELECT fc.EmployeeID, e.Name, fc.Role
-                    FROM FlightCrew fc
-                    JOIN Employee e ON fc.EmployeeID = e.EmployeeID
-                    WHERE fc.FlightID = %s
-                """, (selected_flight_id,))
-                crew_list = cursor.fetchall()
 
         # ---------------- ADD CREW MEMBER ----------------
         if action == "add":
@@ -395,32 +423,78 @@ def update_crew():
 
             if not new_emp_id or not new_role:
                 message = "Error: Employee ID and Role required to add."
+            elif not new_emp_id.isdigit():
+                message = "Error: Employee ID must be a number."
             else:
-                try:
+                # Check if the employee exists
+                cursor.execute("SELECT * FROM Employee WHERE EmployeeID=%s", (new_emp_id,))
+                employee = cursor.fetchone()
+                if not employee:
+                    message = f"Error: Employee ID {new_emp_id} does not exist."
+                else:
+                    # Check if already assigned to this flight
                     cursor.execute("""
-                        INSERT INTO FlightCrew (FlightID, EmployeeID, Role)
-                        VALUES (%s, %s, %s)
-                    """, (selected_flight_id, new_emp_id, new_role))
+                        SELECT * FROM FlightCrew WHERE FlightID=%s AND EmployeeID=%s
+                    """, (selected_flight_id, new_emp_id))
+                    already_assigned = cursor.fetchone()
+                    if already_assigned:
+                        message = f"Error: Employee {employee['Name']} is already assigned to this flight."
+                    else:
+                        cursor.execute("""
+                            INSERT INTO FlightCrew (FlightID, EmployeeID, Role)
+                            VALUES (%s, %s, %s)
+                        """, (selected_flight_id, new_emp_id, new_role))
+                        db.commit()
+                        message = f"Crew member {employee['Name']} added to flight."
+            
+            # Refresh crew list
+            cursor.execute("""
+                SELECT fc.EmployeeID, e.Name, fc.Role
+                FROM FlightCrew fc
+                JOIN Employee e ON fc.EmployeeID = e.EmployeeID
+                WHERE fc.FlightID=%s
+            """, (selected_flight_id,))
+            crew_list = cursor.fetchall()
+
+        # ---------------- REMOVE CREW MEMBER ----------------
+        elif action == "remove":
+            emp_id_to_remove = request.form.get("remove_employee_id")
+            if not emp_id_to_remove:
+                message = "Error: Employee ID required to remove."
+            elif not emp_id_to_remove.isdigit():
+                message = "Error: Employee ID must be a number."
+            else:
+                # Check if the employee is on this flight
+                cursor.execute("""
+                    SELECT * FROM FlightCrew WHERE FlightID=%s AND EmployeeID=%s
+                """, (selected_flight_id, emp_id_to_remove))
+                crew_member = cursor.fetchone()
+
+                if not crew_member:
+                    message = "Error: This crew member is not assigned to this flight."
+                else:
+                    cursor.execute("""
+                        DELETE FROM FlightCrew WHERE FlightID=%s AND EmployeeID=%s
+                    """, (selected_flight_id, emp_id_to_remove))
                     db.commit()
-                    message = "Crew member added to this flight."
+                    message = "Crew member removed from flight."
 
                     # Refresh crew list
                     cursor.execute("""
                         SELECT fc.EmployeeID, e.Name, fc.Role
                         FROM FlightCrew fc
                         JOIN Employee e ON fc.EmployeeID = e.EmployeeID
-                        WHERE fc.FlightID = %s
+                        WHERE fc.FlightID=%s
                     """, (selected_flight_id,))
                     crew_list = cursor.fetchall()
 
-                except Exception as e:
-                    message = f"Database error: {e}"
-
-    return render_template("update_crew.html",
-                           flights=flights,
-                           crew_list=crew_list,
-                           selected_flight_id=selected_flight_id,
-                           message=message)
+    return render_template(
+        "update_crew.html",
+        flights=flights,
+        crew_list=crew_list,
+        selected_flight_id=selected_flight_id,
+        message=message
+    )
 
 @app.route("/add_employee", methods=["GET", "POST"])
 def add_employee():
@@ -503,6 +577,9 @@ def add_passenger():
     data = request.get_json()
 
     pass
+
+# Aggregate Dashboard Analytics Implementation
+
 
 if __name__ == '__main__':
     app.run(debug=True)
