@@ -7,7 +7,7 @@ from dbConnect import get_db_connection
 
 db = get_db_connection()
 cursor = db.cursor(dictionary=True)
-
+import re
 @app.route('/')
 def home():
     return render_template('login.html')
@@ -501,69 +501,112 @@ def add_employee():
     cursor = db.cursor(dictionary=True)
     message = None
 
-    # Handle POST actions
     if request.method == "POST":
         action = request.form.get("action")
+        emp_id = request.form.get("employee_id")
+        name = request.form.get("name")
+        dob = request.form.get("dob")
+        phone = request.form.get("phone")
+        designation = request.form.get("designation")
+
+        # Validate phone format: xxx-xxxx
+        if phone and not re.fullmatch(r"\d{3}-\d{4}", phone):
+            message = "Phone number must be in xxx-xxxx format."
 
         # ADD employee
-        if action == "add":
-            name = request.form.get("name")
-            dob = request.form.get("dob")
-            phone = request.form.get("phone")
-            designation = request.form.get("designation")
-
+        elif action == "add":
             if not name or not dob or not phone or not designation:
                 message = "Error: All fields are required."
             else:
-                cursor.execute("""
-                    INSERT INTO Employee (Name, DateofBirth, Phone, Designation)
-                    VALUES (%s, %s, %s, %s)
-                """, (name, dob, phone, designation))
-                db.commit()
-                message = "Employee added successfully!"
+                # Optionally validate emp_id if user can enter it
+                if emp_id:
+                    if not emp_id.isdigit():
+                        message = "Employee ID must be a number."
+                    else:
+                        emp_id = int(emp_id)
+                        cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
+                        if cursor.fetchone():
+                            message = f"Employee ID {emp_id} is already used."
+
+                if not message:
+                    cursor.execute("""
+                        INSERT INTO Employee (Name, DateofBirth, Phone, Designation)
+                        VALUES (%s, %s, %s, %s)
+                    """, (name, dob, phone, designation))
+                    db.commit()
+                    message = "Employee added successfully!"
 
         # UPDATE employee
         elif action == "update":
-            emp_id = request.form.get("employee_id")
-            name = request.form.get("name")
-            dob = request.form.get("dob")
-            phone = request.form.get("phone")
-            designation = request.form.get("designation")
-
-            cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
-            existing = cursor.fetchone()
-
-            if not existing:
-                message = "Employee ID not found."
+            if not emp_id or not emp_id.isdigit():
+                message = "Employee ID must be a number for update."
             else:
-                cursor.execute("""
-                    UPDATE Employee
-                    SET Name=%s, DateofBirth=%s, Phone=%s, Designation=%s
-                    WHERE EmployeeID=%s
-                """, (name, dob, phone, designation, emp_id))
-                db.commit()
-                message = "Employee updated successfully!"
+                emp_id = int(emp_id)
 
-        # DELETE employee
+                # Check if the employee exists
+                cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
+                existing = cursor.fetchone()
+
+                if not existing:
+                    message = "Employee ID not found."
+
+                else:
+                    # Build dynamic update query
+                    update_fields = []
+                    update_values = []
+
+                    if name:
+                        update_fields.append("Name = %s")
+                        update_values.append(name)
+
+                    if dob:
+                        update_fields.append("DateofBirth = %s")
+                        update_values.append(dob)
+
+                    if phone:
+                        update_fields.append("Phone = %s")
+                        update_values.append(phone)
+
+                    if designation:
+                        update_fields.append("Designation = %s")
+                        update_values.append(designation)
+
+                    if not update_fields:
+                        message = "No fields provided to update."
+                    else:
+                        # Add emp_id to the end for WHERE clause
+                        update_values.append(emp_id)
+
+                        sql = f"UPDATE Employee SET {', '.join(update_fields)} WHERE EmployeeID = %s"
+                        cursor.execute(sql, update_values)
+                        db.commit()
+
+                        message = "Employee updated successfully!"
+
+
         # DELETE employee
         elif action == "delete":
-            emp_id = request.form.get("employee_id")
-
-            # Fetch the employee
-            cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
-            existing = cursor.fetchone()
-
-            if not existing:
-                message = "Employee ID not found."
-            elif existing["Designation"].upper() == "ADMIN":
-                message = "Error: ADMIN employees cannot be removed."
+            if not emp_id or not emp_id.isdigit():
+                message = "Employee ID must be a number for delete."
             else:
-                cursor.execute("DELETE FROM Employee WHERE EmployeeID = %s", (emp_id,))
-                db.commit()
-                message = "Employee deleted successfully!"
+                emp_id = int(emp_id)
+                cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
+                existing = cursor.fetchone()
+                if not existing:
+                    message = "Employee ID not found."
+                elif existing["Designation"].upper() == "ADMIN":
+                    message = "Error: ADMIN employees cannot be removed."
+                else:
+                    # Check if employee is assigned to a flight
+                    cursor.execute("SELECT * FROM FlightCrew WHERE EmployeeID = %s", (emp_id,))
+                    assigned = cursor.fetchall()  # important: fetch all results
+                    if assigned:
+                        message = "Error: Employee is assigned to a flight and cannot be deleted."
+                    elif not message:
+                        cursor.execute("DELETE FROM Employee WHERE EmployeeID = %s", (emp_id,))
+                        db.commit()
+                        message = "Employee deleted successfully!"
 
-
-    # Load employee list for display
     cursor.execute("SELECT * FROM Employee ORDER BY EmployeeID")
     employees = cursor.fetchall()
 
