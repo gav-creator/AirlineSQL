@@ -1,17 +1,13 @@
-
 from flask import Flask, render_template, jsonify, request, flash, redirect, url_for
-import mysql.connector
 
 app = Flask(__name__,template_folder="Front_end/templates")
 app.secret_key = "secret_123"
 
-db = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="2EZ24get", #Come back and update password
-    database="Project_DB"
-)
+from dbConnect import get_db_connection
+
+db = get_db_connection()
 cursor = db.cursor(dictionary=True)
+import re
 @app.route('/')
 def home():
     return render_template('login.html')
@@ -39,7 +35,7 @@ def login():
 
     # Employee found: check designation
     if employee["Designation"].upper() == "ADMIN" or employee["Designation"].upper() == "CEO":
-        return render_template("admin.html")
+        return redirect("/admin")
 
     # Otherwise they are regular employee
     return render_template("employee.html")
@@ -48,6 +44,60 @@ def login():
 @app.route('/employee')
 def employee():
     return render_template('employee.html')
+
+@app.route("/admin")
+def admin_dashboard():
+    cursor = db.cursor(dictionary=True)
+
+    # 1. Airline with most flights
+    cursor.execute("""
+        SELECT a.Name AS AirlineName, COUNT(f.FlightID) AS TotalFlights
+        FROM Airline a
+        LEFT JOIN Flight f ON a.AirlineID = f.AirlineID
+        GROUP BY a.AirlineID
+        ORDER BY TotalFlights DESC
+        LIMIT 1;
+    """)
+    airlineMostFlights = cursor.fetchone()
+
+    # 2. Passengers per flight
+    cursor.execute("""
+        SELECT f.FlightNumber, COUNT(b.PassengerID) AS PassengerCount
+        FROM Flight f
+        LEFT JOIN Booking b ON f.FlightID = b.FlightID
+        GROUP BY f.FlightID;
+    """)
+    passengersPerFlight = cursor.fetchall()
+
+    # 3. Luggage weight per flight
+    cursor.execute("""
+        SELECT f.FlightNumber, SUM(l.Weight) AS TotalLuggageWeight
+        FROM Flight f
+        LEFT JOIN Booking b ON f.FlightID = b.FlightID
+        LEFT JOIN Luggage l ON b.BookingID = l.BookingID
+        GROUP BY f.FlightID;
+    """)
+    luggageWeight = cursor.fetchall()
+
+    # 4. Revenue per flight
+    cursor.execute("""
+        SELECT f.FlightNumber, SUM(p.Amount) AS Revenue
+        FROM Flight f
+        LEFT JOIN Booking b ON f.FlightID = b.FlightID
+        LEFT JOIN Payment p ON b.BookingID = p.BookingID
+        GROUP BY f.FlightID;
+    """)
+    revenuePerFlight = cursor.fetchall()
+
+    return render_template(
+        'admin.html',  # this is your combined HTML template
+        airlineMostFlights=airlineMostFlights,
+        passengersPerFlight=passengersPerFlight,
+        luggageWeight=luggageWeight,
+        revenuePerFlight=revenuePerFlight
+    )
+
+
 
 #Customer button selected
 @app.route("/search_flights", methods=["GET", "POST"])
@@ -238,6 +288,13 @@ def add_flight():
             message = "Error: All fields are required."
         elif departure_airport == arrival_airport:
             message = "Error: Departure and arrival airport cannot be the same."
+        elif departure_time and arrival_time:
+            from datetime import datetime
+            dt_dep = datetime.fromisoformat(departure_time)
+            dt_arr = datetime.fromisoformat(arrival_time)
+
+            if dt_dep >= dt_arr:
+                message = "Departure time must be before arrival time."
         else:
             try:
                 cursor2 = db.cursor()
@@ -258,23 +315,67 @@ def add_flight():
                            airports=airports,
                            airlines=airlines,
                            message=message)
-
 @app.route("/add_airline", methods=["GET", "POST"])
 def add_airline():
+    cursor = db.cursor(dictionary=True)
+    message = None
+    cursor.execute("SELECT AirlineID, Name, Phone FROM Airline ORDER BY Name")
+    airlines_list = cursor.fetchall()
+
     if request.method == "POST":
         action = request.form.get("action")
         airline_id = request.form.get("airline_id")
         name = request.form.get("name")
         phone = request.form.get("phone")
 
-        cursor = db.cursor()
+        # Validate AirlineID for update/delete
+        if action in ["update", "delete"]:
+            if not airline_id:
+                message = "Please enter an Airline ID"
+                return render_template("add_airline.html", airlines=airlines_list, message=message)
+            else:
+                try:
+                    airline_id = int(airline_id)
+                except ValueError:
+                    message = "Airline ID must be a number"
+                    return render_template("add_airline.html", airlines=airlines_list, message=message)
+
+        # Validate phone
+        if phone:
+            if not re.fullmatch(r"\d{3}-\d{3}-\d{4}", phone):
+                message = "Phone number must be in xxx-xxx-xxxx format."
+                return render_template("add_airline.html", airlines=airlines_list, message=message)
+
+            cursor.execute("SELECT * FROM Airline WHERE Phone = %s", (phone,))
+            existing_phone = cursor.fetchone()
+
+            if action == "add" and existing_phone:
+                                    message="Phone number already belongs to another airline."
+                                    return render_template("add_airline.html", airlines=airlines_list, message=message)
+
+            if action == "update" and existing_phone and existing_phone["AirlineID"] != airline_id:
+                                    message="Phone number already belongs to another airline."
+                                    return render_template("add_airline.html", airlines=airlines_list, message=message)
+        # Validate name
+        if name:
+            cursor.execute("SELECT * FROM Airline WHERE Name = %s", (name,))
+            existing_name = cursor.fetchone()
+
+            if action == "add" and existing_name:
+                                message=f"Airline '{existing_name['Name']}' already exists."
+                                return render_template("add_airline.html", airlines=airlines_list, message=message)
+
+            if action == "update" and existing_name and existing_name["AirlineID"] != airline_id:
+                                    message=f"Airline '{existing_name['Name']}' already exists."
+                                    return render_template("add_airline.html", airlines=airlines_list, message=message)
 
         # -----------------------------
         # ADD
         # -----------------------------
         if action == "add":
             if not name or not phone:
-                return render_template("add_airline.html", message="Error: Name and Phone cannot be empty for adding.")
+                    message="Error: Name and Phone cannot be empty."
+                    return render_template("add_airline.html", airlines=airlines_list, message=message)
 
             try:
                 cursor.execute("""
@@ -282,111 +383,91 @@ def add_airline():
                     VALUES (%s, %s)
                 """, (name, phone))
                 db.commit()
-                return render_template("add_airline.html", message="Airline added successfully!")
+                message="Airline added successfully!"
             except Exception as e:
-                return render_template("add_airline.html", message=f"Database Error: {e}")
+                                message=f"Database Error: {e}"
 
         # -----------------------------
         # UPDATE
         # -----------------------------
         if action == "update":
-            if not airline_id:
-                return render_template("add_airline.html", message="Error: AirlineID required for update.")
+            update_fields = []
+            update_values = []
 
-            if not name or not phone:
-                return render_template("add_airline.html", message="Error: Name and Phone cannot be empty for updating.")
+            if name:
+                update_fields.append("Name = %s")
+                update_values.append(name)
+            if phone:
+                update_fields.append("Phone = %s")
+                update_values.append(phone)
 
-            try:
-                cursor.execute("""
-                    UPDATE Airline
-                    SET Name=%s, Phone=%s
-                    WHERE AirlineID=%s
-                """, (name, phone, airline_id))
-                db.commit()
+            if not update_fields:
+                message = "No fields provided to update."
+            else:
+                update_values.append(airline_id)  # for WHERE clause
+                sql = f"UPDATE Airline SET {', '.join(update_fields)} WHERE AirlineID = %s"
+                try:
+                    cursor.execute(sql, update_values)
+                    db.commit()
 
-                if cursor.rowcount == 0:
-                    return render_template("add_airline.html", message="Error: AirlineID not found.")
-
-                return render_template("add_airline.html", message="Airline updated successfully!")
-            except Exception as e:
-                return render_template("add_airline.html", message=f"Database Error: {e}")
+                    if cursor.rowcount == 0:
+                        message = "Error: AirlineID not found."
+                    else:
+                        message = "Airline updated successfully!"
+                except Exception as e:
+                    message = f"Database Error: {e}"
 
         # -----------------------------
         # DELETE
         # -----------------------------
         if action == "delete":
-            if not airline_id:
-                return render_template("add_airline.html", message="Error: AirlineID required for delete.")
-
+            cursor.execute("SELECT * FROM Flight WHERE AirlineID = %s", (airline_id,))
+            flights = cursor.fetchall()
+            if flights:
+                    message=f"Error: Cannot delete AirlineID {airline_id} because it has associated flights."
             try:
                 cursor.execute("DELETE FROM Airline WHERE AirlineID = %s", (airline_id,))
                 db.commit()
 
                 if cursor.rowcount == 0:
-                    return render_template("add_airline.html", message="Error: AirlineID not found.")
+                            message="Error: AirlineID not found."
 
-                return render_template("add_airline.html", message="Airline deleted successfully!")
+                message="Airline deleted successfully!"
             except Exception as e:
-                return render_template("add_airline.html", message=f"Database Error: {e}")
+                                message=f"Database Error: {e}"
+    cursor.execute("SELECT AirlineID, Name, Phone FROM Airline ORDER BY Name")
+    airlines_list = cursor.fetchall()
     
-    # -----------------------------
-    # Fetch all airlines for display
-    # -----------------------------
-    cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM Airline ORDER BY AirlineID")
-    airlines = cursor.fetchall()
+    return render_template("add_airline.html", airlines=airlines_list, message=message)
 
-    # Render template with message + airlines
-    return render_template("add_airline.html", airlines=airlines)
+
 
 @app.route("/update_crew", methods=["GET", "POST"])
 def update_crew():
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
     message = None
 
-    cursor = db.cursor(dictionary=True)
-
-    # Load flight numbers for dropdown
+    # Load all flights for dropdown
     cursor.execute("SELECT FlightID, FlightNumber FROM Flight ORDER BY FlightNumber")
     flights = cursor.fetchall()
 
     selected_flight_id = None
     crew_list = []
 
-    # If user selects a flight or performs an update
     if request.method == "POST":
         action = request.form.get("action")
         selected_flight_id = request.form.get("flight_id")
 
-        # ---------------- GET CREW LIST FOR SELECTED FLIGHT ----------------
+        # Load crew list if a flight is selected
         if selected_flight_id:
             cursor.execute("""
                 SELECT fc.EmployeeID, e.Name, fc.Role
                 FROM FlightCrew fc
                 JOIN Employee e ON fc.EmployeeID = e.EmployeeID
-                WHERE fc.FlightID = %s
+                WHERE fc.FlightID=%s
             """, (selected_flight_id,))
             crew_list = cursor.fetchall()
-
-        # ---------------- REMOVE CREW MEMBER ----------------
-        if action == "remove":
-            emp_id = request.form.get("remove_employee_id")
-
-            if emp_id:
-                cursor.execute("""
-                    DELETE FROM FlightCrew
-                    WHERE FlightID = %s AND EmployeeID = %s
-                """, (selected_flight_id, emp_id))
-                db.commit()
-                message = "Crew member removed from this flight."
-
-                # Reload updated crew list
-                cursor.execute("""
-                    SELECT fc.EmployeeID, e.Name, fc.Role
-                    FROM FlightCrew fc
-                    JOIN Employee e ON fc.EmployeeID = e.EmployeeID
-                    WHERE fc.FlightID = %s
-                """, (selected_flight_id,))
-                crew_list = cursor.fetchall()
 
         # ---------------- ADD CREW MEMBER ----------------
         if action == "add":
@@ -395,101 +476,190 @@ def update_crew():
 
             if not new_emp_id or not new_role:
                 message = "Error: Employee ID and Role required to add."
+            elif not new_emp_id.isdigit():
+                message = "Error: Employee ID must be a number."
             else:
-                try:
+                # Check if the employee exists
+                cursor.execute("SELECT * FROM Employee WHERE EmployeeID=%s", (new_emp_id,))
+                employee = cursor.fetchone()
+                if not employee:
+                    message = f"Error: Employee ID {new_emp_id} does not exist."
+                else:
+                    # Check if already assigned to this flight
                     cursor.execute("""
-                        INSERT INTO FlightCrew (FlightID, EmployeeID, Role)
-                        VALUES (%s, %s, %s)
-                    """, (selected_flight_id, new_emp_id, new_role))
+                        SELECT * FROM FlightCrew WHERE FlightID=%s AND EmployeeID=%s
+                    """, (selected_flight_id, new_emp_id))
+                    already_assigned = cursor.fetchone()
+                    if already_assigned:
+                        message = f"Error: Employee {employee['Name']} is already assigned to this flight."
+                    else:
+                        cursor.execute("""
+                            INSERT INTO FlightCrew (FlightID, EmployeeID, Role)
+                            VALUES (%s, %s, %s)
+                        """, (selected_flight_id, new_emp_id, new_role))
+                        db.commit()
+                        message = f"Crew member {employee['Name']} added to flight."
+            
+            # Refresh crew list
+            cursor.execute("""
+                SELECT fc.EmployeeID, e.Name, fc.Role
+                FROM FlightCrew fc
+                JOIN Employee e ON fc.EmployeeID = e.EmployeeID
+                WHERE fc.FlightID=%s
+            """, (selected_flight_id,))
+            crew_list = cursor.fetchall()
+
+        # ---------------- REMOVE CREW MEMBER ----------------
+        elif action == "remove":
+            emp_id_to_remove = request.form.get("remove_employee_id")
+            if not emp_id_to_remove:
+                message = "Error: Employee ID required to remove."
+            elif not emp_id_to_remove.isdigit():
+                message = "Error: Employee ID must be a number."
+            else:
+                # Check if the employee is on this flight
+                cursor.execute("""
+                    SELECT * FROM FlightCrew WHERE FlightID=%s AND EmployeeID=%s
+                """, (selected_flight_id, emp_id_to_remove))
+                crew_member = cursor.fetchone()
+
+                if not crew_member:
+                    message = "Error: This crew member is not assigned to this flight."
+                else:
+                    cursor.execute("""
+                        DELETE FROM FlightCrew WHERE FlightID=%s AND EmployeeID=%s
+                    """, (selected_flight_id, emp_id_to_remove))
                     db.commit()
-                    message = "Crew member added to this flight."
+                    message = "Crew member removed from flight."
 
                     # Refresh crew list
                     cursor.execute("""
                         SELECT fc.EmployeeID, e.Name, fc.Role
                         FROM FlightCrew fc
                         JOIN Employee e ON fc.EmployeeID = e.EmployeeID
-                        WHERE fc.FlightID = %s
+                        WHERE fc.FlightID=%s
                     """, (selected_flight_id,))
                     crew_list = cursor.fetchall()
 
-                except Exception as e:
-                    message = f"Database error: {e}"
-
-    return render_template("update_crew.html",
-                           flights=flights,
-                           crew_list=crew_list,
-                           selected_flight_id=selected_flight_id,
-                           message=message)
+    return render_template(
+        "update_crew.html",
+        flights=flights,
+        crew_list=crew_list,
+        selected_flight_id=selected_flight_id,
+        message=message
+    )
 
 @app.route("/add_employee", methods=["GET", "POST"])
 def add_employee():
     cursor = db.cursor(dictionary=True)
     message = None
 
-    # Handle POST actions
     if request.method == "POST":
         action = request.form.get("action")
+        emp_id = request.form.get("employee_id")
+        name = request.form.get("name")
+        dob = request.form.get("dob")
+        phone = request.form.get("phone")
+        designation = request.form.get("designation")
+
+        # Validate phone format: xxx-xxxx
+        if phone and not re.fullmatch(r"\d{3}-\d{4}", phone):
+            message = "Phone number must be in xxx-xxxx format."
 
         # ADD employee
-        if action == "add":
-            name = request.form.get("name")
-            dob = request.form.get("dob")
-            phone = request.form.get("phone")
-            designation = request.form.get("designation")
-
+        elif action == "add":
             if not name or not dob or not phone or not designation:
                 message = "Error: All fields are required."
             else:
-                cursor.execute("""
-                    INSERT INTO Employee (Name, DateofBirth, Phone, Designation)
-                    VALUES (%s, %s, %s, %s)
-                """, (name, dob, phone, designation))
-                db.commit()
-                message = "Employee added successfully!"
+                # Optionally validate emp_id if user can enter it
+                if emp_id:
+                    if not emp_id.isdigit():
+                        message = "Employee ID must be a number."
+                    else:
+                        emp_id = int(emp_id)
+                        cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
+                        if cursor.fetchone():
+                            message = f"Employee ID {emp_id} is already used."
+
+                if not message:
+                    cursor.execute("""
+                        INSERT INTO Employee (Name, DateofBirth, Phone, Designation)
+                        VALUES (%s, %s, %s, %s)
+                    """, (name, dob, phone, designation))
+                    db.commit()
+                    message = "Employee added successfully!"
 
         # UPDATE employee
         elif action == "update":
-            emp_id = request.form.get("employee_id")
-            name = request.form.get("name")
-            dob = request.form.get("dob")
-            phone = request.form.get("phone")
-            designation = request.form.get("designation")
-
-            cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
-            existing = cursor.fetchone()
-
-            if not existing:
-                message = "Employee ID not found."
+            if not emp_id or not emp_id.isdigit():
+                message = "Employee ID must be a number for update."
             else:
-                cursor.execute("""
-                    UPDATE Employee
-                    SET Name=%s, DateofBirth=%s, Phone=%s, Designation=%s
-                    WHERE EmployeeID=%s
-                """, (name, dob, phone, designation, emp_id))
-                db.commit()
-                message = "Employee updated successfully!"
+                emp_id = int(emp_id)
 
-        # DELETE employee
+                # Check if the employee exists
+                cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
+                existing = cursor.fetchone()
+
+                if not existing:
+                    message = "Employee ID not found."
+
+                else:
+                    # Build dynamic update query
+                    update_fields = []
+                    update_values = []
+
+                    if name:
+                        update_fields.append("Name = %s")
+                        update_values.append(name)
+
+                    if dob:
+                        update_fields.append("DateofBirth = %s")
+                        update_values.append(dob)
+
+                    if phone:
+                        update_fields.append("Phone = %s")
+                        update_values.append(phone)
+
+                    if designation:
+                        update_fields.append("Designation = %s")
+                        update_values.append(designation)
+
+                    if not update_fields:
+                        message = "No fields provided to update."
+                    else:
+                        # Add emp_id to the end for WHERE clause
+                        update_values.append(emp_id)
+
+                        sql = f"UPDATE Employee SET {', '.join(update_fields)} WHERE EmployeeID = %s"
+                        cursor.execute(sql, update_values)
+                        db.commit()
+
+                        message = "Employee updated successfully!"
+
+
         # DELETE employee
         elif action == "delete":
-            emp_id = request.form.get("employee_id")
-
-            # Fetch the employee
-            cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
-            existing = cursor.fetchone()
-
-            if not existing:
-                message = "Employee ID not found."
-            elif existing["Designation"].upper() == "ADMIN":
-                message = "Error: ADMIN employees cannot be removed."
+            if not emp_id or not emp_id.isdigit():
+                message = "Employee ID must be a number for delete."
             else:
-                cursor.execute("DELETE FROM Employee WHERE EmployeeID = %s", (emp_id,))
-                db.commit()
-                message = "Employee deleted successfully!"
+                emp_id = int(emp_id)
+                cursor.execute("SELECT * FROM Employee WHERE EmployeeID = %s", (emp_id,))
+                existing = cursor.fetchone()
+                if not existing:
+                    message = "Employee ID not found."
+                elif existing["Designation"].upper() == "ADMIN":
+                    message = "Error: ADMIN employees cannot be removed."
+                else:
+                    # Check if employee is assigned to a flight
+                    cursor.execute("SELECT * FROM FlightCrew WHERE EmployeeID = %s", (emp_id,))
+                    assigned = cursor.fetchall()  # important: fetch all results
+                    if assigned:
+                        message = "Error: Employee is assigned to a flight and cannot be deleted."
+                    elif not message:
+                        cursor.execute("DELETE FROM Employee WHERE EmployeeID = %s", (emp_id,))
+                        db.commit()
+                        message = "Employee deleted successfully!"
 
-
-    # Load employee list for display
     cursor.execute("SELECT * FROM Employee ORDER BY EmployeeID")
     employees = cursor.fetchall()
 
